@@ -1,5 +1,5 @@
 import pygame
-from .constants import BLACK, ROWS, RED, SQUARE_SIZE, COLS, WHITE, LIGHT_WOOD, DARK_WOOD
+from .constants import BLACK, ROWS, RED, SQUARE_SIZE, COLS, WHITE, LIGHT_WOOD, DARK_WOOD, BOARD_OFFSET_X, BOARD_OFFSET_Y
 from .piece import Piece
 
 class Board:
@@ -13,6 +13,8 @@ class Board:
     def create_board(self):
         """Initializes board with pieces in starting positions."""
         self.board = []
+        self.red_left = self.white_left = 12
+        self.red_kings = self.white_kings = 0
         for row in range(ROWS):
             self.board.append([])
             for col in range(COLS):
@@ -28,35 +30,41 @@ class Board:
 
     def draw_squares(self, win):
         """Draws checker board squares."""
-        win.fill(DARK_WOOD)
+        # If offests create gaps, draw the background for the board area
+        # pygame.draw.rect(win, DARK_WOOD, (BOARD_OFFSET_X, BOARD_OFFSET_Y, COLS * SQUARE_SIZE, ROWS * SQUARE_SIZE))
         for row in range(ROWS):
             for col in range(row % 2, COLS, 2): # Alternate starting column
-                pygame.draw.rect(win, LIGHT_WOOD, (row * SQUARE_SIZE, col * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE))
+                rect_x = BOARD_OFFSET_X + col * SQUARE_SIZE
+                rect_y = BOARD_OFFSET_Y + row * SQUARE_SIZE
+                pygame.draw.rect(win, LIGHT_WOOD, (rect_x, rect_y, SQUARE_SIZE, SQUARE_SIZE))
 
     def move(self, piece, row, col):
         """Moves a piece on the board, handles kinging, and updates piece count."""
         # Swap the piece on the board grid: place piece in new spot, empty old spot
         self.board[piece.row][piece.col], self.board[row][col] = self.board[row][col], self.board[piece.row][piece.col]
+        
+        was_king = piece.king
+
         piece.move(row, col)
 
         # Check for kinging
-        if row == ROWS - 1 or row == 0: # If piece reaches opposite end
-            if not piece.king:
-                piece.make_king()
-                # Update king count
-                if piece.color == WHITE:
-                    self.white_kings += 1
-                else:
-                    self.red_kings += 1
+        if not was_king and ( (row == 0 and piece.color == RED) or (row == ROWS - 1 and piece.color == WHITE) ):
+            piece.make_king()
+            # Update king count
+            if piece.color == WHITE:
+                self.white_kings += 1
+            else:
+                self.red_kings += 1
 
     def get_piece(self, row, col):
         """Returns piece object at the given coordinates."""
         if 0 <= row < ROWS and 0 <= col < COLS:
             return self.board[row][col]
-        return None # Out of bounds
+        return 0
 
     def draw(self, win):
         """Draws entire board with squares and pieces onto window."""
+        pygame.draw.rect(win, DARK_WOOD, (BOARD_OFFSET_X, BOARD_OFFSET_Y, COLS * SQUARE_SIZE, ROWS * SQUARE_SIZE))
         self.draw_squares(win)
         for row in range(ROWS):
             for col in range(COLS):
@@ -71,8 +79,10 @@ class Board:
                 self.board[piece.row][piece.col] = 0
                 if piece.color == RED:
                     self.red_left -= 1
-                else:
-                    self.white_left -= 1
+                    if piece.king: self.red_kings -= 1 # Decrement king count
+                elif piece.color == WHITE:
+                     self.white_left -= 1
+                     if piece.king: self.white_kings -= 1 # Decrement king count
 
     def winner(self):
         """Determines if there is a winner"""
@@ -100,79 +110,77 @@ class Board:
 
         return moves
 
-    def _traverse_left(self, start, stop, step, color, left, skipped=[]):
+    def _traverse_left(self, start_row, stop_row, step, color, left_col, skipped_pieces=[]):
         """Helper to recursively check diagonal moves/jumps to the left."""
         moves = {}
-        last = [] # Last skipped piece
+        last_skipped = [] # Tracks piece skipped immediately before an empty square
 
-        for r in range(start, stop, step):
-            if left < 0: # Off the board left
+        for r in range(start_row, stop_row, step):
+            if left_col < 0: # Off the board left
                 break
 
-            current_square = self.board[r][left]
+            current_square = self.get_piece(r, left_col) # Use get_piece for bounds check
 
-            if current_square == 0: # Empty square 
-                if skipped and not last: # Can't move to empty square after skipping
-                    break
-                elif skipped: # Valid jump landing spot
-                    moves[(r, left)] = last + skipped
-                else: # Regular move
-                    moves[(r, left)] = last
+            if current_square == 0: # Found an empty square
+                if last_skipped:
+                    # --- Landing after a jump ---
+                    current_total_skipped = skipped_pieces + last_skipped
+                    moves[(r, left_col)] = current_total_skipped
 
-                if last: # If we just jumped over a piece
-                    if step == -1: # Moving up
-                        row = max(r - 3, -1)
-                    else: # Moving down
-                        row = min(r + 3, ROWS)
-                    # Check for further jumps from this landing spot
-                    moves.update(self._traverse_left(r + step, row, step, color, left - 1, skipped=moves[(r, left)]))
-                    moves.update(self._traverse_right(r + step, row, step, color, left + 1, skipped=moves[(r, left)]))
-                break # Stop searching this direction after finding empty square or landing spot
+                    # --- Check for Multi-Jumps ---
+                    # If we landed from a jump, check if further jumps are possible from here.
+                    next_stop_row = max(r - 3, -1) if step == -1 else min(r + 3, ROWS)
+                    # Crucially, pass the *current_total_skipped* list to the recursive calls.
+                    moves.update(self._traverse_left(r + step, next_stop_row, step, color, left_col - 1, skipped_pieces=current_total_skipped))
+                    moves.update(self._traverse_right(r + step, next_stop_row, step, color, left_col + 1, skipped_pieces=current_total_skipped))
 
-            elif current_square.color == color: # Own piece blocking
+                elif not skipped_pieces:
+                    moves[(r, left_col)] = [] 
                 break
-            else: # Found opponent piece
-                last = [current_square] # Potential piece to jump over
+            elif current_square.color == color: # Found own piece
+                break # Blocked, stop searching this path
+            else: # Found opponent's piece
+                last_skipped = [current_square]
 
-            left -= 1 # Move diagonally left
+            # Continue diagonally left for the next iteration
+            left_col -= 1
 
         return moves
 
-    def _traverse_right(self, start, stop, step, color, right, skipped=[]):
+    def _traverse_right(self, start_row, stop_row, step, color, right_col, skipped_pieces=[]):
         """Helper to recursively check diagonal moves/jumps to the right."""
         moves = {}
-        last = []
+        last_skipped = [] # Track piece(s) skipped immediately before current square
 
-        for r in range(start, stop, step):
-            if right >= COLS: # Off the board right
+        for r in range(start_row, stop_row, step):
+            if right_col >= COLS: # Off the board right
                 break
 
-            current = self.board[r][right]
-            if current == 0: # Empty square
-                if skipped and not last:
-                    break
-                elif skipped:
-                    moves[(r, right)] = last + skipped
-                else:
-                    moves[(r, right)] = last
+            current_square = self.get_piece(r, right_col) # Use get_piece for bounds check
 
-                if last:
-                    if step == -1:
-                        row = max(r - 3, -1)
-                    else:
-                        row = min(r + 3, ROWS)
-                    moves.update(self._traverse_left(r + step, row, step, color, right - 1, skipped=moves[(r, right)]))
-                    moves.update(self._traverse_right(r + step, row, step, color, right + 1, skipped=moves[(r, right)]))
+            if current_square == 0: # Found an empty square
+                if last_skipped:
+                    # --- Landing after a jump ---
+                    current_total_skipped = skipped_pieces + last_skipped
+                    moves[(r, right_col)] = current_total_skipped
+                    # --- Check for Multi-Jumps ---
+                    next_stop_row = max(r - 3, -1) if step == -1 else min(r + 3, ROWS)
+                    moves.update(self._traverse_left(r + step, next_stop_row, step, color, right_col - 1, skipped_pieces=current_total_skipped))
+                    moves.update(self._traverse_right(r + step, next_stop_row, step, color, right_col + 1, skipped_pieces=current_total_skipped))
+                elif not skipped_pieces:
+                    # --- Simple Move ---
+                    moves[(r, right_col)] = []
+                # Stop searching further along this path after finding a landing spot
                 break
+            elif current_square.color == color: # Found own piece
+                break # Blocked
+            else: # Found opponent's piece
+                last_skipped = [current_square] # Potential jump target
 
-            elif current.color == color: # Own piece
-                break
-            else: # Opponent piece
-                last = [current]
-
-            right += 1 # Move diagonally right
+            right_col += 1
 
         return moves
+
 
     # AI Heuristic Evaluation Function
     def evaluate(self):
@@ -183,23 +191,17 @@ class Board:
         # Simple heuristic: piece count difference + king value (more value for king piece)
         score = self.white_left - self.red_left + (self.white_kings * 0.5 - self.red_kings * 0.5)
 
-        # --- Potential Enhancements (Optional) ---
-        # 1. Positional Advantage: Give bonuses for pieces in center, advancing, etc.
-        #    Ex: Bonus for pieces closer to becoming kings.
-        # for row in range(ROWS):
-        #     for col in range(COLS):
-        #         piece = self.board[row][col]
-        #         if piece != 0:
-        #             if piece.color == WHITE:
-        #                 # Bonus for white pieces advancing down the board
-        #                 score += (row * 0.1) if not piece.king else 0
-        #             else:
-        #                 # Bonus for red pieces advancing up the board
-        #                 score -= ((ROWS - 1 - row) * 0.1) if not piece.king else 0
-
-        # 2. Piece Safety: Penalize pieces that are immediately threatened.
-        # 3. Control of Center: Bonus for controlling center squares.
-        # 4. Mobility: Count possible moves for each piece and add to score.
+        # Simple positional advantage: bonus for pieces advancing
+        for row in range(ROWS):
+            for col in range(COLS):
+                piece = self.board[row][col]
+                if piece != 0:
+                    if piece.color == WHITE and not piece.king:
+                        # Bonus for white pieces advancing down the board
+                        score += (row * 0.1)
+                    elif piece.color == RED and not piece.king:
+                        # Bonus for red pieces advancing up the board
+                        score -= ((ROWS - 1 - row) * 0.1)
         
         return score
 
@@ -208,6 +210,6 @@ class Board:
         pieces = []
         for row in self.board:
             for piece in row:
-                if piece != 0 and piece.color == color:
+                if isinstance(piece, Piece) and piece.color == color:
                     pieces.append(piece)
         return pieces

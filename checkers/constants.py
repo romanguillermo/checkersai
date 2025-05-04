@@ -2,17 +2,37 @@ import pygame
 
 # Game window/board dimensions
 WIDTH, HEIGHT = 800, 800
+HUD_HEIGHT = 45
+GAME_AREA_HEIGHT = HEIGHT - HUD_HEIGHT
 ROWS, COLS = 8, 8
-SQUARE_SIZE = WIDTH // COLS
+SQUARE_SIZE = min(WIDTH // COLS, GAME_AREA_HEIGHT // ROWS)
+BOARD_WIDTH_TOTAL = SQUARE_SIZE * COLS
+BOARD_HEIGHT_TOTAL = SQUARE_SIZE * ROWS
+BOARD_OFFSET_X = (WIDTH - BOARD_WIDTH_TOTAL) // 2
+BOARD_OFFSET_Y = HUD_HEIGHT + (GAME_AREA_HEIGHT - BOARD_HEIGHT_TOTAL) // 2
 
 # Color constants (rgb)
 RED = (255, 0, 0)
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
-BLUE = (0, 0, 255) # possible move
+BLUE = (0, 0, 255) # valid moves
 GREY = (128, 128, 128)
 DARK_WOOD = (139, 69, 19)
 LIGHT_WOOD = (210, 180, 140)
+YELLOW = (255, 255, 0)  
+DARK_GREY = (64, 64, 64)
+
+# UI Colors
+MENU_BG_COLOR = (40, 40, 50)
+BUTTON_COLOR = (70, 70, 90)
+BUTTON_HOVER_COLOR = (100, 100, 120)
+BUTTON_TEXT_COLOR = WHITE
+SELECTED_BUTTON_COLOR = (120, 50, 50) # Selected difficulty
+HUD_BG_COLOR = (45, 45, 45) # HUD background
+TEXT_COLOR = WHITE
+
+AI_MOVE_DELAY = 500 # ms
 
 # Crown piece image
-CROWN = pygame.transform.smoothscale(pygame.image.load('./checkers/assets/crown.png'), (36, 36)) 
+CROWN_IMG = pygame.image.load('checkers/assets/crown.png')
+CROWN = pygame.transform.smoothscale(CROWN_IMG, (SQUARE_SIZE//2, SQUARE_SIZE//2))
