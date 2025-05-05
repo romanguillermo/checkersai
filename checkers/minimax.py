@@ -83,9 +83,14 @@ def simulate_move(piece, move_coords, board_copy, skipped_pieces):
     return board_copy
 
 def get_all_moves(board, color, game):
-    """Generates all possible board states reachable in one turn by given color."""
-    possible_next_boards = [] # List to store resulting board states
- 
+    """
+    Generates all possible board states reachable in one turn by the given color,
+    respecting the forced capture rule.
+    """
+    possible_capture_boards = [] # List to store resulting board states from captures
+    possible_simple_boards = []  # List to store resulting board states from simple moves
+    found_capture = False        # Flag to track if any capture is possible
+
     # Iterate through all pieces of the given color on the board
     for piece in board.get_all_pieces(color):
         # Get all valid moves (including jumps) for the current piece
@@ -93,15 +98,34 @@ def get_all_moves(board, color, game):
 
         # For each valid move destination
         for move_coords, skipped_pieces_info in valid_moves.items():
-            # Create a deep copy of the board for simulation and avoid modifying original
+            # --- Create a deep copy of the board for simulation ---
             temp_board = deepcopy(board)
             temp_piece = temp_board.get_piece(piece.row, piece.col)
-            temp_skipped_pieces = [temp_board.get_piece(p.row, p.col) for p in skipped_pieces_info]
+            # Get skipped pieces references from the temp_board
+            temp_skipped_pieces = [temp_board.get_piece(p.row, p.col) for p in skipped_pieces_info if p != 0]
 
             # Simulate the move on temporary board copy
             new_board_state = simulate_move(temp_piece, move_coords, temp_board, temp_skipped_pieces)
 
-            # Add resulting board state to our list of possibilities
-            possible_next_boards.append(new_board_state)
+            # Check if this move was a capture
+            if skipped_pieces_info: # If the list of skipped pieces is not empty
+                possible_capture_boards.append(new_board_state)
+                found_capture = True
+            else: # This was a simple move
+                # Only add simple moves if we might need them later
+                if not found_capture:
+                    possible_simple_boards.append(new_board_state)
+            # Optimization: If we found a capture, we no longer need to store simple moves for *this specific piece*
+            # but we still need to check *other pieces* in case they have captures.
+            # However, if we've already found *any* capture from *any* piece,
+            # we can stop collecting simple moves altogether for efficiency.
+            if found_capture:
+                 possible_simple_boards = [] # Clear simple moves if a capture exists anywhere
 
-    return possible_next_boards
+    # --- Apply Forced Capture Rule ---
+    if found_capture:
+        # If any capture move was found, only return the boards resulting from captures
+        return possible_capture_boards
+    else:
+        # If no captures were found, return all the boards resulting from simple moves
+        return possible_simple_boards

@@ -103,7 +103,7 @@ def main():
                         ai_depth = 2 # Medium
                     elif hard_button_rect.collidepoint(event.pos):
                         selected_difficulty = 'Hard'
-                        ai_depth = 3 # Hard
+                        ai_depth = 5 # Hard
                     # Check start button click
                     elif start_button_rect.collidepoint(event.pos) and selected_difficulty:
                         game_state = STATE_PLAYING
